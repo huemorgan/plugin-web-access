@@ -1,6 +1,6 @@
 [project]
 name = "plugin-web-access"
-version = "0.2.0"
+version = "0.2.1"
 description = "Live web access for Luna — search, fetch, HTTP. Built on luna_sdk v0."
 readme = "README.md"
 license = { text = "MIT" }
