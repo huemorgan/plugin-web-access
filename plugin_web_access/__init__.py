@@ -97,7 +97,9 @@ _HTTP_REQUEST_DEF = ToolDef(
 class WebAccessPlugin(LunaPlugin):
     manifest = PluginManifest(
         name="plugin-web-access",
-        version="0.2.1",
+        icon="search",
+        image="assets/icon.png",
+        version="0.2.2",
         description="Web search (Tavily/Google), page fetch, and HTTP client — live internet access.",
         tools=[_WEB_SEARCH_DEF, _WEB_FETCH_DEF, _HTTP_REQUEST_DEF],
     )
