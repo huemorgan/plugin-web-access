@@ -77,6 +77,79 @@ class TestSearch:
         out = await run_search("q", client=_client(lambda r: httpx.Response(500, json={})))
         assert out["error"] == "search request failed" and "500" in out["detail"]
 
+    async def test_virtual_connection_omits_body_api_key(self, monkeypatch) -> None:
+        """Gateway device tokens must not land in Tavily's body api_key."""
+        monkeypatch.setenv("LUNA_WEB_SEARCH_PROVIDER", "tavily")
+        monkeypatch.delenv("LUNA_TAVILY_API_KEY", raising=False)
+
+        class _Auth:
+            location = "header"
+            name = "Authorization"
+            scheme = "Bearer"
+
+        class _Conn:
+            base_url = "https://gateway.example/proxy/tavily"
+            secret = "lsv1-device-token"
+            source = "virtual"
+            auth = _Auth()
+
+            def apply(self, headers, params):
+                headers["Authorization"] = f"Bearer {self.secret}"
+
+        class _Vault:
+            async def connect(self, slug, **kwargs):
+                assert slug == "tavily"
+                return _Conn()
+
+            async def get_credential(self, name):
+                raise KeyError(name)
+
+        seen: dict = {}
+
+        def handler(req: httpx.Request) -> httpx.Response:
+            seen["url"] = str(req.url)
+            seen["auth"] = req.headers.get("Authorization")
+            seen["body"] = req.content.decode()
+            return httpx.Response(200, json={
+                "answer": "ok",
+                "results": [{"title": "T", "url": "https://t.example", "content": "c"}],
+            })
+
+        out = await run_search("q", client=_client(handler), vault=_Vault())
+        assert out["result_count"] == 1
+        assert "gateway.example/proxy/tavily/search" in seen["url"]
+        assert seen["auth"] == "Bearer lsv1-device-token"
+        assert "api_key" not in seen["body"]
+
+    async def test_real_connection_keeps_body_api_key(self, monkeypatch) -> None:
+        monkeypatch.setenv("LUNA_WEB_SEARCH_PROVIDER", "tavily")
+        monkeypatch.delenv("LUNA_TAVILY_API_KEY", raising=False)
+
+        class _Conn:
+            base_url = "https://api.tavily.com"
+            secret = "tvly-real"
+            source = "real"
+
+            def apply(self, headers, params):
+                headers["Authorization"] = f"Bearer {self.secret}"
+
+        class _Vault:
+            async def connect(self, slug, **kwargs):
+                return _Conn()
+
+            async def get_credential(self, name):
+                raise KeyError(name)
+
+        seen: dict = {}
+
+        def handler(req: httpx.Request) -> httpx.Response:
+            seen["body"] = req.content.decode()
+            return httpx.Response(200, json={"answer": "", "results": []})
+
+        out = await run_search("q", client=_client(handler), vault=_Vault())
+        assert "error" not in out
+        assert '"api_key":"tvly-real"' in seen["body"] or '"api_key": "tvly-real"' in seen["body"]
+
 
 # ---------------- web_fetch ----------------
 def test_extract_readable_strips_chrome() -> None:
